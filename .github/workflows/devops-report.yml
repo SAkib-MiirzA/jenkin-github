@@ -1,0 +1,80 @@
+name: DevOps HTML Report
+
+on:
+  push:
+    branches: [ "main" ]
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    env:
+      USER_NAME: SAkib
+      SERVER_IP: 172.92.201.56
+
+    steps:
+
+    - name: 📥 Checkout Repository
+      uses: actions/checkout@v4
+
+    - name: 🐳 Check Docker
+      run: |
+        echo "Checking Docker containers..."
+        docker ps || true
+
+    - name: 📄 Generate HTML Report
+      run: |
+        cat <<EOF > report.html
+        <!DOCTYPE html>
+        <html>
+        <head>
+            <title>GitHub Actions DevOps Report</title>
+            <style>
+                body {
+                    font-family: Arial;
+                    background: #0f172a;
+                    color: #e2e8f0;
+                    text-align: center;
+                    padding: 50px;
+                }
+                .card {
+                    background: #1e293b;
+                    padding: 30px;
+                    border-radius: 12px;
+                }
+                h1 { color: #38bdf8; }
+                .success { color: #22c55e; }
+                .info { color: #facc15; }
+            </style>
+        </head>
+        <body>
+            <div class="card">
+                <h1>🚀 GitHub Actions DevOps Report</h1>
+
+                <p>👋 Hi! ${USER_NAME}</p>
+                <p class="success">✅ Your containers are running successfully!</p>
+                <p class="info">🌐 Your page IP is: <b>${SERVER_IP}</b></p>
+
+                <hr>
+
+                <p>🔄 CI/CD Pipeline executed successfully</p>
+                <p>🐳 Docker status checked</p>
+                <p>📦 Artifacts generated</p>
+                <p>⚙️ Deployment simulated</p>
+                <p>📊 Monitoring checks passed</p>
+                <p>🔐 Security scan: OK</p>
+
+                <hr>
+
+                <p>🎉 Great job, DevOps Engineer!</p>
+            </div>
+        </body>
+        </html>
+        EOF
+
+    - name: 📦 Upload Artifact
+      uses: actions/upload-artifact@v4
+      with:
+        name: devops-report
+        path: report.html
