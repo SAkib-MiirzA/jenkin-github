@@ -11,7 +11,8 @@ pipeline {
         stage('📥 Checkout Code') {
             steps {
                 git branch: 'main',
-                url: 'https://github.com/YOUR_USERNAME/devops-html-report.git'
+                url: 'https://github.com/SAkib-MiirzA/jenkin-github.git', // ✅ correct repo
+                credentialsId: 'github-jenkins-pat' // ✅ PAT credential ID in Jenkins
             }
         }
 
