@@ -1,81 +1,94 @@
 pipeline {
     agent any
 
+    // Build parameters
+    parameters {
+        choice(name: 'REPO_NAME', choices: ['GitHub-CV', 'GitLab-Task'], description: 'Select which repo to build')
+        choice(name: 'GIT_METHOD', choices: ['HTTPS', 'SSH'], description: 'Select Git access method')
+    }
+
     environment {
-        USER_NAME = "SAkib"
-        SERVER_IP = "172.92.201.56"
+        // GitHub
+        GITHUB_HTTPS = "https://github.com/SAkib-MiirzA/jenkin-github.git"
+        GITHUB_SSH   = "git@github.com:SAkib-MiirzA/jenkin-github.git"
+        CRED_GITHUB_HTTPS = "github-https"  // Jenkins Credential ID for GitHub HTTPS
+        CRED_GITHUB_SSH   = "github-ssh"    // Jenkins Credential ID for GitHub SSH
+
+        // GitLab
+        GITLAB_HTTPS = "https://gitlab.com/sakib00786/gitlab-task.git"
+        GITLAB_SSH   = "git@gitlab.com:sakib00786/gitlab-task.git"
+        CRED_GITLAB_HTTPS = "gitlab-https"  // Jenkins Credential ID for GitLab HTTPS
+        CRED_GITLAB_SSH   = "gitlab-ssh"    // Jenkins Credential ID for GitLab SSH
     }
 
     stages {
 
-        stage('📥 Checkout Code') {
-            steps {
-                git branch: 'main',
-                url: 'https://github.com/SAkib-MiirzA/jenkin-github.git', // ✅ correct repo
-                credentialsId: 'github-jenkins-pat' // ✅ PAT credential ID in Jenkins
-            }
-        }
-
-        stage('🐳 Check Docker') {
-            steps {
-                sh 'docker ps || true'
-            }
-        }
-
-        stage('📄 Generate HTML Report') {
+        stage(' Checkout Repo') {
             steps {
                 script {
-                    def htmlContent = """
-                    <!DOCTYPE html>
-                    <html>
-                    <head>
-                        <title>Jenkins DevOps Report</title>
-                        <style>
-                            body { font-family: Arial; background:#0f172a; color:#e2e8f0; text-align:center; padding:50px; }
-                            .card { background:#1e293b; padding:30px; border-radius:12px; }
-                            h1 { color:#38bdf8; }
-                            .success { color:#22c55e; }
-                            .info { color:#facc15; }
-                        </style>
-                    </head>
-                    <body>
-                        <div class="card">
-                            <h1>🚀 Jenkins DevOps Report</h1>
-                            <p>👋 Hi! ${USER_NAME}</p>
-                            <p class="success">✅ Your containers are running successfully!</p>
-                            <p class="info">🌐 Your page IP is: <b>${SERVER_IP}</b></p>
+                    def repoUrl = ""
+                    def credId = ""
 
-                            <hr>
+                    if (params.REPO_NAME == 'GitHub-CV') {
+                        if (params.GIT_METHOD == 'HTTPS') {
+                            repoUrl = env.GITHUB_HTTPS
+                            credId  = env.CRED_GITHUB_HTTPS
+                        } else {
+                            repoUrl = env.GITHUB_SSH
+                            credId  = env.CRED_GITHUB_SSH
+                        }
+                    } else { // GitLab-Task
+                        if (params.GIT_METHOD == 'HTTPS') {
+                            repoUrl = env.GITLAB_HTTPS
+                            credId  = env.CRED_GITLAB_HTTPS
+                        } else {
+                            repoUrl = env.GITLAB_SSH
+                            credId  = env.CRED_GITLAB_SSH
+                        }
+                    }
 
-                            <p>🔄 CI/CD Pipeline executed successfully</p>
-                            <p>🐳 Docker containers checked</p>
-                            <p>📦 Build artifacts generated</p>
-                            <p>⚙️ Deployment completed</p>
-                            <p>📊 Monitoring checks passed</p>
-                            <p>🔐 Security scan: OK</p>
-
-                            <hr>
-
-                            <p>🎉 Great job, DevOps Engineer!</p>
-                        </div>
-                    </body>
-                    </html>
-                    """
-
-                    writeFile file: 'report.html', text: htmlContent
+                    echo "Checking out repo: ${repoUrl}"
+                    git branch: 'main', url: repoUrl, credentialsId: credId
                 }
             }
         }
 
-        stage('📦 Archive Report') {
+        stage(' Verify Files') {
             steps {
-                archiveArtifacts artifacts: 'report.html', fingerprint: true
+                sh '''
+                echo "Listing files in workspace..."
+                ls -la
+                '''
             }
         }
 
-        stage('🎉 Done') {
+        stage(' Show Info') {
             steps {
-                echo "Pipeline executed successfully!"
+                script {
+                    def ip = sh(script: "hostname -I | awk '{print \$1}'", returnStdout: true).trim()
+                    echo "======================================"
+                    echo "Repo: ${params.REPO_NAME}"
+                    echo "Git Method: ${params.GIT_METHOD}"
+                    echo "Jenkins Build URL: ${env.BUILD_URL}"
+                    echo "Server IP: http://${ip}"
+                    echo "======================================"
+
+                    if (params.REPO_NAME == 'GitHub-CV') {
+                        echo "GitHub Pages Preview: https://jenkin-github/"
+                    }
+                }
+            }
+        }
+
+        stage(' Archive Repo') {
+            steps {
+                archiveArtifacts artifacts: '**/*', fingerprint: true
+            }
+        }
+
+        stage(' Done') {
+            steps {
+                echo " Pipeline executed successfully!"
             }
         }
     }
