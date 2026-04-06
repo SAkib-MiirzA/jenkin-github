@@ -46,7 +46,7 @@ pipeline {
             }
         }
 
-        stage('📂 Prepare Website Files') {
+        stage('📂 Prepare Website Files (No rsync)') {
             steps {
                 sh '''
                 echo "Preparing site files..."
@@ -54,8 +54,18 @@ pipeline {
                 rm -rf ${DEPLOY_DIR}
                 mkdir ${DEPLOY_DIR}
 
-                # Copy everything except .git
-                rsync -av --exclude='.git' ./ ${DEPLOY_DIR}/
+                # Copy normal files
+                cp -r * ${DEPLOY_DIR}/ 2>/dev/null || true
+
+                # Copy hidden files safely
+                for file in .*; do
+                    if [ "$file" != "." ] && [ "$file" != ".." ] && [ "$file" != ".git" ]; then
+                        cp -r "$file" ${DEPLOY_DIR}/ 2>/dev/null || true
+                    fi
+                done
+
+                # Remove git folder if copied
+                rm -rf ${DEPLOY_DIR}/.git
 
                 echo "✅ Files prepared:"
                 ls -la ${DEPLOY_DIR}
@@ -70,7 +80,8 @@ pipeline {
                         env.HTML_FILE = "index.html"
                         echo "✅ index.html found"
                     } else {
-                        echo "⚠️ No index.html found (Pages may not render properly)"
+                        env.HTML_FILE = ""
+                        echo "⚠️ No index.html found"
                     }
                 }
             }
