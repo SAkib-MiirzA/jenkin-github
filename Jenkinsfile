@@ -1,94 +1,148 @@
 pipeline {
     agent any
 
-    // Build parameters
     parameters {
-        choice(name: 'REPO_NAME', choices: ['GitHub-CV', 'GitLab-Task'], description: 'Select which repo to build')
-        choice(name: 'GIT_METHOD', choices: ['HTTPS', 'SSH'], description: 'Select Git access method')
+        choice(name: 'GIT_METHOD', choices: ['HTTPS', 'SSH'], description: 'Choose Git access method')
     }
 
     environment {
-        // GitHub
-        GITHUB_HTTPS = "https://github.com/SAkib-MiirzA/jenkin-github.git"
-        GITHUB_SSH   = "git@github.com:SAkib-MiirzA/jenkin-github.git"
-        CRED_GITHUB_HTTPS = "github-https"  // Jenkins Credential ID for GitHub HTTPS
-        CRED_GITHUB_SSH   = "github-ssh"    // Jenkins Credential ID for GitHub SSH
-
-        // GitLab
-        GITLAB_HTTPS = "https://gitlab.com/sakib00786/gitlab-task.git"
-        GITLAB_SSH   = "git@gitlab.com:sakib00786/gitlab-task.git"
-        CRED_GITLAB_HTTPS = "gitlab-https"  // Jenkins Credential ID for GitLab HTTPS
-        CRED_GITLAB_SSH   = "gitlab-ssh"    // Jenkins Credential ID for GitLab SSH
+        CRED_HTTPS = "repo-https"
+        CRED_SSH   = "repo-ssh"
+        DEPLOY_DIR = "site"
     }
 
     stages {
 
-        stage(' Checkout Repo') {
+        stage('📥 Detect Repo URL') {
             steps {
                 script {
-                    def repoUrl = ""
-                    def credId = ""
-
-                    if (params.REPO_NAME == 'GitHub-CV') {
-                        if (params.GIT_METHOD == 'HTTPS') {
-                            repoUrl = env.GITHUB_HTTPS
-                            credId  = env.CRED_GITHUB_HTTPS
-                        } else {
-                            repoUrl = env.GITHUB_SSH
-                            credId  = env.CRED_GITHUB_SSH
-                        }
-                    } else { // GitLab-Task
-                        if (params.GIT_METHOD == 'HTTPS') {
-                            repoUrl = env.GITLAB_HTTPS
-                            credId  = env.CRED_GITLAB_HTTPS
-                        } else {
-                            repoUrl = env.GITLAB_SSH
-                            credId  = env.CRED_GITLAB_SSH
-                        }
+                    if (!env.GIT_URL) {
+                        error("❌ Jenkinsfile must be loaded from SCM!")
                     }
 
-                    echo "Checking out repo: ${repoUrl}"
-                    git branch: 'main', url: repoUrl, credentialsId: credId
+                    echo "Detected repo: ${env.GIT_URL}"
+
+                    if (params.GIT_METHOD == 'HTTPS') {
+                        repoUrl = env.GIT_URL.startsWith('git@') ?
+                            env.GIT_URL.replaceFirst(/^git@(.*):(.*)$/, 'https://$1/$2') :
+                            env.GIT_URL
+                        credId = env.CRED_HTTPS
+                    } else {
+                        repoUrl = env.GIT_URL.startsWith('https://') ?
+                            env.GIT_URL.replaceFirst(/^https:\\/\\/(.*)\\/(.*)\\.git$/, 'git@$1:$2.git') :
+                            env.GIT_URL
+                        credId = env.CRED_SSH
+                    }
+
+                    env.REPO_URL = repoUrl
+                    env.CRED_ID  = credId
                 }
             }
         }
 
-        stage(' Verify Files') {
+        stage('📂 Checkout Repo') {
+            steps {
+                git branch: 'main', url: "${env.REPO_URL}", credentialsId: "${env.CRED_ID}"
+            }
+        }
+
+        stage('📂 Prepare Website Files') {
             steps {
                 sh '''
-                echo "Listing files in workspace..."
-                ls -la
+                echo "Preparing site files..."
+
+                rm -rf ${DEPLOY_DIR}
+                mkdir ${DEPLOY_DIR}
+
+                # Copy everything except .git
+                rsync -av --exclude='.git' ./ ${DEPLOY_DIR}/
+
+                echo "✅ Files prepared:"
+                ls -la ${DEPLOY_DIR}
                 '''
             }
         }
 
-        stage(' Show Info') {
+        stage('🌐 Detect Entry File') {
             steps {
                 script {
-                    def ip = sh(script: "hostname -I | awk '{print \$1}'", returnStdout: true).trim()
-                    echo "======================================"
-                    echo "Repo: ${params.REPO_NAME}"
-                    echo "Git Method: ${params.GIT_METHOD}"
-                    echo "Jenkins Build URL: ${env.BUILD_URL}"
-                    echo "Server IP: http://${ip}"
-                    echo "======================================"
-
-                    if (params.REPO_NAME == 'GitHub-CV') {
-                        echo "GitHub Pages Preview: https://jenkin-github/"
+                    if (fileExists("${env.DEPLOY_DIR}/index.html")) {
+                        env.HTML_FILE = "index.html"
+                        echo "✅ index.html found"
+                    } else {
+                        echo "⚠️ No index.html found (Pages may not render properly)"
                     }
                 }
             }
         }
 
-        stage(' Archive Repo') {
+        stage('🌍 Jenkins HTML Preview') {
+            when {
+                expression { return env.HTML_FILE != "" }
+            }
+            steps {
+                publishHTML([
+                    reportDir: "${env.DEPLOY_DIR}",
+                    reportFiles: "${env.HTML_FILE}",
+                    reportName: 'Website Preview',
+                    keepAll: true,
+                    alwaysLinkToLastBuild: true,
+                    allowMissing: false
+                ])
+            }
+        }
+
+        stage('🚀 Deploy to Pages') {
+            steps {
+                script {
+                    def branch = ""
+
+                    if (env.REPO_URL.contains("github.com")) {
+                        branch = "gh-pages"
+                    } else if (env.REPO_URL.contains("gitlab.com")) {
+                        branch = "pages"
+                    } else {
+                        error("❌ Unsupported Git provider")
+                    }
+
+                    echo "Deploying to: ${branch}"
+
+                    dir("${env.DEPLOY_DIR}") {
+                        withCredentials([usernamePassword(
+                            credentialsId: env.CRED_ID,
+                            usernameVariable: 'USER',
+                            passwordVariable: 'TOKEN'
+                        )]) {
+
+                            sh """
+                            git init
+                            git checkout -b ${branch}
+
+                            git config user.email "jenkins@local"
+                            git config user.name "Jenkins"
+
+                            git add .
+                            git commit -m "🚀 Auto deploy from Jenkins" || echo "No changes"
+
+                            git push -f ${env.REPO_URL} ${branch}
+                            """
+                        }
+                    }
+
+                    echo "✅ Deployment Done!"
+                }
+            }
+        }
+
+        stage('📦 Archive') {
             steps {
                 archiveArtifacts artifacts: '**/*', fingerprint: true
             }
         }
 
-        stage(' Done') {
+        stage('🎉 Done') {
             steps {
-                echo " Pipeline executed successfully!"
+                echo "✅ Full Website Pipeline Completed!"
             }
         }
     }
